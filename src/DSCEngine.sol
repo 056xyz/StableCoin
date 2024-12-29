@@ -8,7 +8,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 
 /**
  * @title DSCEngine
- * @author abgnv
+ * @author 056xyz
  * The system is designed to be as minimal as possible, and have the tokens maintain a 1 token to 1 USD ratio.
  *
  * This stablecoin has the properties
@@ -40,7 +40,7 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% collateralization ratio
     uint256 private constant LIQUIDATION_PRECISION = 100;
     uint256 private constant LIQUIDATION_BONUS = 10;
-    // uint256 private constant HALTH_FACTOR = 1;
+    // uint256 private constant HEALTH_FACTOR = 1;
     uint256 private constant MIN_HEALTH_FACTOR = 1e18;
 
     mapping(address token => address priceFeed) private s_priceFeed;
@@ -113,7 +113,7 @@ contract DSCEngine is ReentrancyGuard {
     {
         s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
         emit DepositCollateral(msg.sender, tokenCollateralAddress, amountCollateral);
-        
+
         // ??
         bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
         if (!success) {
@@ -176,7 +176,6 @@ contract DSCEngine is ReentrancyGuard {
         moreThanZero(debtToCover)
         nonReentrant
     {
-        //q healtfactor тук ли да я тествам или по добре в самата функция?
         uint256 startingUserHealthFactor = _healthFactor(user);
         if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
             revert DSCEngine__HealthFactorOk();
@@ -187,15 +186,13 @@ contract DSCEngine is ReentrancyGuard {
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
         _redeemCollateral(user, msg.sender, collateral, totalCollateralToRedeem);
         _burnDsc(debtToCover, user, msg.sender);
-        uint256 endingUserHealthFactor = _healthFactor(user);
 
+        uint256 endingUserHealthFactor = _healthFactor(user);
         if (endingUserHealthFactor <= startingUserHealthFactor) {
             revert DSCEngine__HealthFactorNotImproved();
         }
         _revertIfHealthFactorIsBroken(user);
     }
-
-    function getHealthFactor() external {}
 
     /**
      * @dev Low level internal function. Do not call unless you check for health factor being broken.
@@ -242,7 +239,7 @@ contract DSCEngine is ReentrancyGuard {
         // total Dsc minted
         // total collateral VALUE
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
-        uint256 collateralAdjustedforThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
         // 1000 ETH * 50 = 50000 / 100 = 500
         // $150 ETH / 100 DSC = 1.5
         // 150 * 50 = 7500 / 100 = 75/ 100 = .75 (>1)
@@ -250,10 +247,22 @@ contract DSCEngine is ReentrancyGuard {
         // 1000 * 50 = 50000 / 100 = 500 / 100 = 5 (<1)
     }
 
+    function _calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    )
+        internal
+        pure
+        returns (uint256)
+    {
+        if (totalDscMinted == 0) return type(uint256).max;
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
+    }
+
     function _revertIfHealthFactorIsBroken(address user) internal view {
         // 1. Check health factor (do they have enough collateral)
         // 2. If not, revert
-
         uint256 userHealthFactor = _healthFactor(user);
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
             revert DSCEngine__BreaksHealthFactor(userHealthFactor);
@@ -269,6 +278,8 @@ contract DSCEngine is ReentrancyGuard {
         (, int256 price,,,) = priceFeed.latestRoundData();
         // 1ETH = 1000 USD
         // The returned value from CL will be 1000 * 1e8
+
+        //here sus 
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -301,4 +312,6 @@ contract DSCEngine is ReentrancyGuard {
     {
         (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
+
+    function getHealthFactor() external {}
 }
