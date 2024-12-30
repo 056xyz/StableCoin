@@ -8,6 +8,7 @@ import {DSCEngine} from "../../src/DSCEngine.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockFailedTransferFrom} from "../mocks/MockFailedTransferFrom.sol";
+import {MockFailedTransfer} from "../mocks/MockFailedTransfer.sol";
 import {MockFailedMintDSC} from "../mocks/MockFailedMintDSC.sol";
 import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
 
@@ -98,6 +99,14 @@ contract DSCEngineTest is Test {
         _;
     }
 
+    modifier depositedCollateralAndMintedDsc() {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
+        dscEngine.depositAndMintDsc(weth, AMOUNT_COLLATERAL, AMOUNT_COLLATERAL);
+        vm.stopPrank();
+        _;
+    }
+
     function testCanDepositCollateralAndGetAccountInfo() public depositedCollateral {
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscEngine.getAccountInformation(USER);
         uint256 expectedTotalDscMinted = 0;
@@ -134,6 +143,58 @@ contract DSCEngineTest is Test {
         mockDsce.depositCollateral(address(mockDsc), AMOUNT_COLLATERAL);
         vm.stopPrank();
     }
+
+    ////////////////////////////////
+    // _redeemCollateral Tests  ///
+    //////////////////////////////
+
+    function testCanRedeemCollateral() public depositedCollateral {
+        vm.startPrank(USER);
+        dscEngine.redeemCollateral(weth, 1);
+        vm.stopPrank();
+        assert(dscEngine.getCollateralBalanceOfUser(USER, weth) == AMOUNT_COLLATERAL - 1);
+    }
+
+    //? expectedHealthFactor = 0
+    function testRevertIfRedeemBreaksHealthFactor() public depositedCollateralAndMintedDsc {
+        (, int256 price,,,) = MockV3Aggregator(ethUsdPriceFeed).latestRoundData();
+
+        uint256 amountToMint =
+            (AMOUNT_COLLATERAL * (uint256(price) * dscEngine.getAdditionalFeedPrecision())) / dscEngine.getPrecision();
+
+        vm.startPrank(USER);
+        uint256 expectedHealthFactor =
+            dscEngine.calculateHealthFactor(amountToMint, dscEngine.getUsdValue(weth, AMOUNT_COLLATERAL));
+
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, expectedHealthFactor));
+        dscEngine.redeemCollateral(weth, AMOUNT_COLLATERAL);
+        vm.stopPrank();
+    }
+
+    function testRevertIfRedeemCollateralTransferFailed() public {
+        address owner = msg.sender;
+        vm.prank(owner);
+        MockFailedTransfer mockDsc = new MockFailedTransfer();
+        tokenAddresses = [address(mockDsc)];
+        feedAddresses = [ethUsdPriceFeed];
+        vm.prank(owner);
+        DSCEngine mockDsce = new DSCEngine(tokenAddresses, feedAddresses, address(mockDsc));
+        mockDsc.mint(USER, AMOUNT_COLLATERAL);
+
+        vm.prank(owner);
+        mockDsc.transferOwnership(address(mockDsce));
+        // Arrange - User
+        vm.startPrank(USER);
+        ERC20Mock(address(mockDsc)).approve(address(mockDsce), AMOUNT_COLLATERAL);
+        // Act / Assert
+        mockDsce.depositCollateral(address(mockDsc), AMOUNT_COLLATERAL);
+        vm.expectRevert(DSCEngine.DSCEngine__TransferFailed.selector);
+        mockDsce.redeemCollateral(address(mockDsc), AMOUNT_COLLATERAL);
+        vm.stopPrank();
+    }
+
+    function testEmitCollateralRedeemedWithCorrectArgs() public {}
+
     ////////////////////////////////
     // mintDsc Tests  /////////////
     //////////////////////////////
@@ -190,29 +251,38 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
     }
 
-   
-   
-   
-   
-   
-   
-   
-    ////////////////////////////////
-    // _redeemCollateral Tests  ///
-    //////////////////////////////
-
-    function testCollateralDepositedMappingIsSubtractingCorrectly() public {}
-    function testEmitCollateralRedemeedEvent() public {}
-    function testCanTransferRedeemedCollateral() public {}
-    function testRevertIfRedeemedCollateralTRansferFailed() public {}
-
     ////////////////////////////////
     // _burnDsc Tests  ////////////
     //////////////////////////////
-    function testdscMintedMappingRemovesCorrectly() public {}
-    function testCanTransferFrom() public {} // името не е ок
-    function testRevertIfTRansferFailed() public {} // името не е ок
-    function testCanBurnDsc() public {}
+
+    function testRevertsIfBurnAmountIsZero() public {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
+        dscEngine.depositAndMintDsc(weth, AMOUNT_COLLATERAL, 1);
+        vm.expectRevert(DSCEngine.DSCEngine__MustBeMoreThanZero.selector);
+        dscEngine.burnDsc(0);
+        vm.stopPrank();
+    }
+
+    function testCanBurnDsc() public depositedCollateral {
+        uint256 initialDscAmount = 3;
+        uint256 burnAmount = 1;
+
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
+        dscEngine.mintDsc(initialDscAmount);
+        dsc.approve(address(dscEngine), 3);
+        dscEngine.burnDsc(burnAmount);
+        vm.stopPrank();
+
+        assertEq(dsc.balanceOf(USER), initialDscAmount - burnAmount);
+    }
+
+    function testCantBurnMoreThanUserHas() public {
+        vm.prank(USER);
+        vm.expectRevert();
+        dscEngine.burnDsc(1);
+    }
 
     ///////////////////////////////////////////
     // _revertIfHealthFactorIsBroken Tests  ///////////
