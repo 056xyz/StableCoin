@@ -8,6 +8,8 @@ import {DSCEngine} from "../../src/DSCEngine.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockFailedTransferFrom} from "../mocks/MockFailedTransferFrom.sol";
+import {MockFailedMintDSC} from "../mocks/MockFailedMintDSC.sol";
+import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
 
 contract DSCEngineTest is Test {
     DeployDSC deployer;
@@ -22,8 +24,7 @@ contract DSCEngineTest is Test {
     uint256 public constant AMOUNT_COLLATERAL = 10 ether;
     uint256 public constant STARTING_ERC20_BALANCE = 10 ether;
 
-        address[] feedAddresses;
-
+    address[] feedAddresses;
 
     function setUp() public {
         deployer = new DeployDSC();
@@ -133,6 +134,96 @@ contract DSCEngineTest is Test {
         mockDsce.depositCollateral(address(mockDsc), AMOUNT_COLLATERAL);
         vm.stopPrank();
     }
+    ////////////////////////////////
+    // mintDsc Tests  /////////////
+    //////////////////////////////
 
+    function testRevertsIfMintAmountIsZero() public {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
+        dscEngine.depositCollateral(weth, AMOUNT_COLLATERAL);
+        vm.expectRevert(DSCEngine.DSCEngine__MustBeMoreThanZero.selector);
+        dscEngine.mintDsc(0);
+        vm.stopPrank();
+    }
 
+    function testCanMintDsc() public depositedCollateral {
+        vm.prank(USER);
+        dscEngine.mintDsc(1);
+        uint256 userBalance = dsc.balanceOf(USER);
+        assertEq(userBalance, 1);
+    }
+
+    function testRevertsIfMintFails() public {
+        // Arrange - Setup
+        MockFailedMintDSC mockDsc = new MockFailedMintDSC();
+        tokenAddresses = [weth];
+        feedAddresses = [ethUsdPriceFeed];
+        address owner = msg.sender;
+        vm.prank(owner);
+        DSCEngine mockDsce = new DSCEngine(tokenAddresses, feedAddresses, address(mockDsc));
+        mockDsc.transferOwnership(address(mockDsce));
+        // Arrange - User
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(mockDsce), AMOUNT_COLLATERAL);
+
+        mockDsce.depositCollateral(weth, AMOUNT_COLLATERAL);
+        vm.expectRevert(DSCEngine.DSCEngine__MintFailed.selector);
+        mockDsce.mintDsc(1);
+        vm.stopPrank();
+    }
+
+    function testRevertsIfMintAmountBreaksHealthFactor() public depositedCollateral {
+        // 0xe580cc6100000000000000000000000000000000000000000000000006f05b59d3b20000
+        // 0xe580cc6100000000000000000000000000000000000000000000003635c9adc5dea00000
+        (, int256 price,,,) = MockV3Aggregator(ethUsdPriceFeed).latestRoundData();
+
+        uint256 amountToMint =
+            (AMOUNT_COLLATERAL * (uint256(price) * dscEngine.getAdditionalFeedPrecision())) / dscEngine.getPrecision();
+
+        vm.startPrank(USER);
+        uint256 expectedHealthFactor =
+            dscEngine.calculateHealthFactor(amountToMint, dscEngine.getUsdValue(weth, AMOUNT_COLLATERAL));
+
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, expectedHealthFactor));
+        dscEngine.mintDsc(amountToMint);
+        vm.stopPrank();
+    }
+
+   
+   
+   
+   
+   
+   
+   
+    ////////////////////////////////
+    // _redeemCollateral Tests  ///
+    //////////////////////////////
+
+    function testCollateralDepositedMappingIsSubtractingCorrectly() public {}
+    function testEmitCollateralRedemeedEvent() public {}
+    function testCanTransferRedeemedCollateral() public {}
+    function testRevertIfRedeemedCollateralTRansferFailed() public {}
+
+    ////////////////////////////////
+    // _burnDsc Tests  ////////////
+    //////////////////////////////
+    function testdscMintedMappingRemovesCorrectly() public {}
+    function testCanTransferFrom() public {} // името не е ок
+    function testRevertIfTRansferFailed() public {} // името не е ок
+    function testCanBurnDsc() public {}
+
+    ///////////////////////////////////////////
+    // _revertIfHealthFactorIsBroken Tests  ///////////
+    /////////////////////////////////////////////////
+    function testRevertIfHealthFactorIsBroken() public {}
+
+    ////////////////////////////////
+    // _healthFactor Tests  ///////////
+    //////////////////////////////
+
+    ////////////////////////////////
+    // liquidate Tests  ///////////
+    //////////////////////////////
 }
