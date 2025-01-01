@@ -54,7 +54,7 @@ contract DSCEngine is ReentrancyGuard {
     // Events
     event DepositCollateral(address indexed user, address indexed token, uint256 indexed amount);
     event CollateralRedeemed(
-        address indexed redeemedFrom, address indexed redeemedTo, address indexed token, uint256 amount
+        address indexed redeemedFrom, address indexed redeemedTo, address token, uint256 amount
     );
 
     // Modifiers
@@ -276,7 +276,7 @@ contract DSCEngine is ReentrancyGuard {
         // 1ETH = 1000 USD
         // The returned value from CL will be 1000 * 1e8
 
-        //here sus
+        //@audit here sus precision is f up
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -333,7 +333,7 @@ contract DSCEngine is ReentrancyGuard {
         (, int256 price,,,) = priceFeed.latestRoundData();
         // 1 ETH = 1000 USD
         // The returned value from Chainlink will be 1000 * 1e8
-        // Most USD pairs have 8 decimals, so we will just pretend they all do
+        // Most USD pairs have 8 decimals
         // We want to have everything in terms of WEI, so we add 10 zeros at the end
         return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
@@ -385,7 +385,6 @@ contract DSCEngine is ReentrancyGuard {
     function getDsc() external view returns (address) {
         return address(i_dsc);
     }
-
     function getCollateralTokenPriceFeed(address token) external view returns (address) {
         return s_priceFeed[token];
     }
