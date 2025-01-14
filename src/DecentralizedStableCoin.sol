@@ -6,12 +6,12 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title Decentralized Stable Coin
- * @author abgnv
+ * @author 056xyz
  * Collateral: Exogenous(ETH & BTC)
  * Minting: Algorithmic
  * Relative Stability: Pegged to 1 USD
  *
- * @dev This contract is meant to be governed by DSCEngine.sol. this contract is just ERC20 implementation of the stablecoin system.
+ * @dev This contract is the ERC20 implementation and its meant to be governed by DSCEngine.sol.
  */
 contract DecentralizedStableCoin is ERC20Burnable, Ownable {
     error DecentralizedStableCoin__MustBeMoreThanZero(uint256 _amount);
