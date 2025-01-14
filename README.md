@@ -38,6 +38,17 @@ make deploy
 
 ## Deploy - Other Network
 
+1. Setup environment variables
+2. Get testnet ETH
+3. Deploy
+
+```
+make deploy ARGS="--network sepolia"
+```
+
+## Scripts
+
+For example, on Sepolia:
 
 1. Get some WETH
 
